@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Counter Widget</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      background: #f5f5f5;
+    }
+
+    .counter-widget {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #000;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 18px;
+    }
+
+    .btn {
+      background: none;
+      border: none;
+      color: white;
+      cursor: pointer;
+      font-size: 20px;
+      transition: transform 0.2s;
+    }
+
+    .btn:hover {
+      transform: scale(1.2);
+    }
+  </style>
+</head>
+<body>
+  <div class="counter-widget">
+    <button class="btn" id="likeBtn">👍</button>
+    <span id="counter">34</span>
+    <button class="btn" id="dislikeBtn">👎</button>
+  </div>
+
+  <script>
+    let counter = 34;
+    const counterEl = document.getElementById('counter');
+    const likeBtn = document.getElementById('likeBtn');
+    const dislikeBtn = document.getElementById('dislikeBtn');
+
+    likeBtn.addEventListener('click', () => {
+      counter++;
+      counterEl.textContent = counter;
+    });
+
+    dislikeBtn.addEventListener('click', () => {
+      if (counter > 0) counter--;
+      counterEl.textContent = counter;
+    });
+  </script>
+</body>
+</html>
