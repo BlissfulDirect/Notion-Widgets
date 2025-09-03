@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Job Apply 20-Min Timer</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#0f172a; --muted:#64748b; --card:#f8fafc; --accent:#2563eb; --accent-weak:#dbeafe;
+    --ok:#16a34a; --warn:#f59e0b; --danger:#ef4444; --radius:16px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0b0f14; --fg:#e5e7eb; --muted:#94a3b8; --card:#0f172a; --accent:#60a5fa; --accent-weak:#1e293b; }
+  }
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;
+    display:grid; place-items:center; padding:18px;
+  }
+  .widget{
+    width:min(520px,100%); background:var(--card);
+    border:1px solid rgba(0,0,0,.06); border-radius:var(--radius);
+    box-shadow:0 10px 30px rgba(0,0,0,.14); overflow:hidden;
+  }
+  .header{
+    display:flex; align-items:center; gap:10px; padding:16px 18px; background:var(--accent-weak);
+    border-bottom:1px solid rgba(0,0,0,.08);
+  }
+  .emoji{font-size:22px}
+  .title{font-weight:700}
+  .content{padding:18px}
+  .stats{
+    display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px;
+  }
+  .card{
+    background:var(--bg); border:1px dashed rgba(0,0,0,.15); border-radius:12px; padding:14px; text-align:center;
+  }
+  .label{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em}
+  .value{font-size:36px; font-weight:800; margin-top:6px}
+  .timer{
+    margin:10px 0 14px; font-size:42px; font-weight:800; text-align:center;
+    background:var(--bg); border:1px solid rgba(0,0,0,.08); border-radius:12px; padding:10px 14px;
+  }
+  .row{display:flex; gap:10px; align-items:center; justify-content:space-between; margin-top:10px}
+  .btn{
+    flex:1; padding:14px 16px; border:none; border-radius:12px; font-weight:700; font-size:16px; cursor:pointer;
+    background:var(--accent); color:#fff;
+  }
+  .btn:disabled{opacity:.6; cursor:not-allowed}
+  .ghost{background:transparent; color:var(--fg); border:1px solid rgba(0,0,0,.15)}
+  .ok{background:var(--ok)}
+  .warn{background:var(--warn)}
+  .danger{background:var(--danger)}
+  .hint{margin-top:10px; font-size:12px; color:var(--muted); text-align:center}
+  .callout{
+    margin-top:12px; padding:14px; border-radius:12px; background:var(--bg); border-left:6px solid var(--accent);
+  }
+  .small{font-size:12px; color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="widget" id="app">
+    <div class="header">
+      <div class="emoji" id="emoji">📄</div>
+      <div class="title" id="title">Job Apply Session</div>
+    </div>
+    <div class="content">
+      <div class="stats">
+        <div class="card">
+          <div class="label">Completed Sessions</div>
+          <div class="value" id="count">0</div>
+          <div class="small" id="lastDone">—</div>
+        </div>
+        <div class="card">
+          <div class="label">Session Length</div>
+          <div class="value" id="len">20:00</div>
+          <div class="small">Change with ?mins=…</div>
+        </div>
+      </div>
+
+      <div class="timer" id="timer">20:00</div>
+
+      <div class="row">
+        <button class="btn" id="startBtn">Start 20-min Session</button>
+      </div>
+      <div class="row">
+        <button class="btn ok" id="completeBtn" disabled>Complete</button>
+        <button class="btn warn" id="pauseBtn" disabled>Pause</button>
+        <button class="btn ghost" id="cancelBtn" disabled>Cancel</button>
+      </div>
+
+      <div class="callout">
+        <strong>Progress:</strong> <span id="calloutCount">0</span> job-apply blocks completed. Keep going! 🚀
+      </div>
+      <div class="hint">This widget stores data in your browser (<code>localStorage</code>). Each viewer has their own progress.</div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  // --- Config from URL ---
+  const p = new URLSearchParams(location.search);
+  const TITLE = p.get("title") || "Job Apply Session";
+  const EMOJI = p.get("emoji") || "📄";
+  const MINUTES = Math.max(1, parseInt(p.get("mins") || "20", 10)); // default 20
+  const ID = p.get("id") || "job-apply";
+
+  document.getElementById("title").textContent = TITLE;
+  document.getElementById("emoji").textContent = EMOJI;
+  document.getElementById("len").textContent = `${String(MINUTES).padStart(2,"0")}:00`;
+  document.getElementById("timer").textContent = `${String(MINUTES).padStart(2,"0")}:00`;
+
+  // --- Storage helpers ---
+  const KEY = `apply-widget::${ID}`;
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return { count: 0, lastDone: null, active: null };
+      return JSON.parse(raw);
+    } catch {
+      return { count: 0, lastDone: null, active: null };
+    }
+  }
+  function save(state) {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  }
+
+  // --- State ---
+  let state = load();
+  let tickHandle = null;
+
+  // active structure: { startedAt: ISO, pausedAt?: ISO, remainingMs: number }
+  function startSession() {
+    if (state.active) return;
+    state.active = {
+      startedAt: new Date().toISOString(),
+      remainingMs: MINUTES * 60 * 1000
+    };
+    save(state);
+    render();
+    startTick();
+  }
+
+  function resumeSession() {
+    if (!state.active || !state.active.pausedAt) return;
+    const pausedFor = Date.now() - new Date(state.active.pausedAt).getTime();
+    state.active.pausedAt = null;
+    // remainingMs unchanged while paused
+    save(state);
+    startTick();
+    render();
+  }
+
+  function pauseSession() {
+    if (!state.active || state.active.pausedAt) return;
+    state.active.pausedAt = new Date().toISOString();
+    stopTick();
+    save(state);
+    render();
+  }
+
+  function cancelSession() {
+    if (!state.active) return;
+    stopTick();
+    state.active = null; // no increment
+    save(state);
+    render();
+  }
+
+  function completeSession() {
+    if (!state.active) return;
+    stopTick();
+    state.count += 1;
+    state.lastDone = new Date().toISOString();
+    state.active = null;
+    save(state);
+    ping();
+    render();
+  }
+
+  // --- Timer tick ---
+  function startTick() {
+    stopTick();
+    tickHandle = setInterval(() => {
+      // If paused, do nothing
+      if (!state.active || state.active.pausedAt) return;
+      state.active.remainingMs = Math.max(0, state.active.remainingMs - 1000);
+      if (state.active.remainingMs <= 0) {
+        completeSession(); // auto-complete on finish
+        return;
+      }
+      save(state);
+      renderTimer();
+    }, 1000);
+  }
+  function stopTick() {
+    if (tickHandle) clearInterval(tickHandle);
+    tickHandle = null;
+  }
+
+  // --- UI ---
+  const $timer = document.getElementById("timer");
+  const $count = document.getElementById("count");
+  const $callout = document.getElementById("calloutCount");
+  const $last = document.getElementById("lastDone");
+
+  const $start = document.getElementById("startBtn");
+  const $pause = document.getElementById("pauseBtn");
+  const $cancel = document.getElementById("cancelBtn");
+  const $complete = document.getElementById("completeBtn");
+
+  $start.addEventListener("click", startSession);
+  $pause.addEventListener("click", () => {
+    if (state.active && !state.active.pausedAt) pauseSession(); else resumeSession();
+  });
+  $cancel.addEventListener("click", cancelSession);
+  $complete.addEventListener("click", completeSession);
+
+  function fmt(ms) {
+    const s = Math.max(0, Math.round(ms/1000));
+    const m = Math.floor(s/60);
+    const r = s%60;
+    return `${String(m).padStart(2,"0")}:${String(r).padStart(2,"0")}`;
+  }
+
+  function renderTimer() {
+    const t = state.active ? state.active.remainingMs : MINUTES*60*1000;
+    $timer.textContent = fmt(t);
+  }
+
+  function render() {
+    // numbers
+    $count.textContent = state.count;
+    $callout.textContent = state.count;
+
+    $last.textContent = state.lastDone ? `Last completed: ${state.lastDone.slice(0,16).replace("T"," ")}` : "—";
+
+    // buttons
+    const running = !!state.active;
+    const paused = running && !!state.active.pausedAt;
+
+    $start.disabled = running;
+    $pause.disabled = !running;
+    $cancel.disabled = !running;
+    $complete.disabled = !running;
+
+    $pause.textContent = paused ? "Resume" : "Pause";
+
+    renderTimer();
+  }
+
+  // gentle visual ping on completion
+  function ping() {
+    const el = document.getElementById("app");
+    el.style.boxShadow = "0 0 0 9999px rgba(22,163,74,.10) inset, 0 10px 30px rgba(0,0,0,.14)";
+    setTimeout(()=>{ el.style.boxShadow = "0 10px 30px rgba(0,0,0,.14)"; }, 450);
+  }
+
+  // --- Restore any active session across reloads ---
+  (function restore() {
+    if (!state.active) { render(); return; }
+    // if not paused, advance remaining based on elapsed time
+    if (!state.active.pausedAt) {
+      const started = new Date(state.active.startedAt).getTime();
+      const elapsed = Date.now() - started;
+      state.active.remainingMs = Math.max(0, MINUTES*60*1000 - elapsed);
+      if (state.active.remainingMs <= 0) { completeSession(); return; }
+      save(state);
+      startTick();
+    }
+    render();
+  })();
+})();
+</script>
+</body>
+</html>
